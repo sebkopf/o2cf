@@ -1,0 +1,306 @@
+---
+title: "Oxygen diffusion and respiratory consumption in lung mucus"
+output: html_document
+---
+
+All source code and data needed to generate this report is available [online](https://github.com/sebkopf/o2cf).
+
+```{r load-funcs, message=FALSE, warning=FALSE}
+source("functions.R")
+source("model.R")
+```
+
+```{r init, echo=FALSE, message=FALSE, warning=FALSE}
+# load all dependencies
+packages <- c(
+  "knitr", # knitr package for rendering the markdown file
+  "ggplot2", # plotting 
+  "scales", # for scale notations
+  "RColorBrewer", # colour palettes for plotting
+  "grid", # plot structuring
+  "reshape2", # data frame operations
+  "plyr", # data frame operations
+  "deSolve", # differential equation solver
+  "ReacTran", # diffusion modeling
+  "rootSolve", # steady state calculations
+  "lubridate", # for converting times to most accessible time units
+  "xlsx", # read excel files (requires Java runtime)
+  "testthat" # for testing code
+)
+load_pkgs(packages)
+
+# knitr options
+opts_knit$set(root.dir=".")
+opts_knit$set(cache = TRUE)
+opts_knit$set(autodep = TRUE)
+options(pdfsave.prefix = "plot-")
+options(pdfsave.folder = "figures")
+```
+
+### Theory
+
+Details on the system are in the main text. Here just a quick summary of the non-dimensionalized differential equations and boundary conditions.
+
+Differential equations:
+
+ - along a line (column): $\frac{\partial{u}}{\partial{t}} = \left(  \frac{\partial{}^2 u}{\partial{x^2}} \right) - \left( \frac{u}{1 + u} + g \right) = 0$
+ - radial (ring): $\frac{\partial{u}}{\partial{t}} = \left(  \frac{\partial{}^2 u}{\partial{r^2}} + \frac{1}{r}\frac{\partial{u}}{\partial{r}} \right) - \left( \frac{u}{1 + u} + g \right) = 0$ (assuming radial symmetry, i.e. $\frac{\partial{u}}{\partial{\theta}} = 0$)
+ - spherical: $\frac{\partial{u}}{\partial{t}} = \left(  \frac{\partial{}^2 u}{\partial{r^2}} + \frac{2}{r}\frac{\partial{u}}{\partial{r}} \right) - \left( \frac{u}{1 + u} + g \right) = 0$ (assuming radial and azimuthal symmetry, i.e. $\frac{\partial{u}}{\partial\theta}=0\,;\,\frac{\partial{u}}{\partial\phi}=0$)
+
+Boundary conditions (difference between outward vs. inward only applicable to radial and spherical geometry):
+
+ - outward diffusion:
+    - $u(r = r_1) = {O_2}_{max}$ (oxygen maximal at the inner air-mucus boundary, diffusion across the air-water interface much faster than diffusion deeper into the mucus so this is treated as constant supply)
+    - $\left.\frac{\partial{u}}{\partial{r}} \right|_{r=r_2} = 0$  (reflecting boundary at the outer boundary, for example the mucus-ephilial cell surface)
+ - inward diffusion:
+    - $u(r = r_2) = {O_2}_{max}$ (oxygen maximal at the outer boundary)
+    - $\left.\frac{\partial{u}}{\partial{r}} \right|_{r=r_1} = 0$  (inner boundary reflecting)
+
+Diffusion is modeled using the **ReacTran** package (Soetaert and Meysman, 2012) and steady state concentrations ($\frac{\partial{u}}{\partial{t}} == 0$) are computed using the **rootSolve** package (Soetaert, 2009).
+
+### Prep
+
+Make sure default parameters are loaded and the non-dimensionalization and modeling functions are running as expected.
+
+#### Default parameters
+
+Load default parameters from the constants excel file.
+
+```{r defaults, results='asis'}
+constants <- read.xlsx("parameters.xlsx", sheetName = "constants", stringsAsFactors = F, header=TRUE, check.names=FALSE)
+kable(constants)
+```
+
+#### Testing
+
+Running a few tests to make sure code and parameter changes don't break the code in unexpected ways. None of these tests should throw an error if the non-dimensionalizatiis working as expected.
+
+```{r tests}
+test_that("forward backward non-dimensionalizatoin / re-dimensionalization works", {
+  expect_equal(re_dim_o2(non_dim_o2(200)), 200)
+  expect_equal(re_dim_x(non_dim_x(100)), 100)
+  expect_equal(re_dim_t(non_dim_t(20)), 20)
+})
+
+test_that("scaling and non-dimensional evaluation matches independently computed values", {
+  expect_equal(signif(calc_spatial_scaling_factor(), 5), 39860)
+  expect_equal(signif(calc_temporal_scaling_factor(), 5), 2.4271)
+  expect_equal(signif(calc_maintenance_term(), 5), 0.010921)
+  expect_equal(signif(non_dim_o2(250), 5), 20.161)
+  expect_equal(signif(non_dim_x(100), 5), 3.986)
+  expect_equal(signif(non_dim_t(60), 5), 145.63)
+})
+```
+
+## Modeling
+
+The O2 diffusion vs. respiration modeling. Load all modeling parameters:
+
+```{r load-model-params, results='asis'}
+params <- read.xlsx("parameters.xlsx", sheetName = "models", stringsAsFactors = F, header=TRUE, check.names=TRUE)
+kable(params)
+```
+
+
+### Oxygen penetration into mucus in different scenarios
+
+Compare oxygen penetration into a mucus clogged airway, disloged mucus aggregate (presumed spherical) and the mucus lining of partially clogged airway
+
+#### Run model
+
+```{r run-model1, results='asis'}
+data1 <- ddply(subset(params, test == "geometry"), names(params), function(df) {
+  with(unique(df), {
+    result <- model_o2(
+      x_min = free.um, x_max = free.um + mucus.um, geometry = geometry, 
+      direction = direction, cells = cell.pow, D_o2 = D_o2)
+    if (direction == "inward")
+      return(mutate(result, x = max(x) - x))
+    else
+      return(mutate(result, x = x - min(x)))
+    })
+})
+
+kable(summarize_model_results(data1, params))
+```
+
+#### Plot geometry comparison
+
+```{r oxygen_profiles_different_geometries, fig.width=10, fig.height=7, save_pdf=TRUE}
+p1 <- ggplot(data1) +
+  geom_rect(data = data.frame(layer = c("air", "mucus"), min = c(-50, 0), max = c(0, Inf)), 
+            aes(xmin = -Inf, xmax = Inf, ymin = min, ymax = max, fill = layer), alpha = 0.1) +
+  geom_line(aes(o2, x, colour = factor(cell.pow)), size = 1) + 
+  geom_hline(yintercept = 0, colour = "black", size = 1, linetype = 2) + 
+  scale_colour_manual ("Microbial load: ", values = brewer.pal(9, "Set1"), 
+                       labels = function(value) sapply(value, function(i) bquote("10"^.(i)~"cells/ml"))) + 
+  scale_fill_manual("Layer: ", values = c("#2171B5", "#FEE08B")) + 
+  scale_x_continuous(expression("O"[2]~"["*mu*M*"]"), expand=c(0,0)) +
+  scale_y_reverse(expression("Depth into mucus ["*mu*m*"]"), expand = c(0, 0)) + 
+  facet_grid(~Scenario, labeller = function(var, val) { 
+      sapply(as.character(val), function(i) {
+          lines <- strsplit(i, "\\\\\\\\")[[1]]
+          two_line_label(lines[1], lines[2])
+        })
+    }) + 
+  theme_bw() + theme_xangle() + theme_facet() + theme_public() + 
+  theme(legend.position = "bottom") 
+p1
+```
+
+### Comparision between differen diffusion coefficients
+
+Here we compare the effects of variable diffusion coefficients.
+
+#### Run model
+
+```{r run-model2, results='asis'}
+data2 <- ddply(subset(params, test == "diffusivity"), names(params), function(df) {
+  with(unique(df), model_o2(x_min = free.um, x_max = free.um + mucus.um, 
+                            geometry = geometry, direction = direction, 
+                            cells = cell.pow, D_o2 = D_o2))
+})
+
+kable(summarize_model_results(data2, params))
+```
+
+#### Plot diffusion comparison
+
+```{r oxygen_profiles_variable_diffusivities, fig.width=10, fig.height=7, save_pdf=TRUE}
+p1 %+% data2  %+%
+  facet_grid(~D_o2, labeller = function(variable, value){
+    sapply(value, function(i) 
+      two_line_label(unique(params$Diffusion[params$D_o2 == i]), 
+                     bquote("D"["O2"]*":"~.(round(i, 1))%.%10^-6~cm^2~s^-1)))
+  }) 
+```
+
+
+### Oxycline depth
+
+Find the minimal mucus thickness at which oxygen concentrations reach below the cutoff of `r get_default("o2_cutoff", "µM")` µM (i.e. find the thickness of the oxycline).
+
+```{r o2-depth, results='asis'}
+cutoff_depths <- ddply(subset(params, test == "cutoff"), names(params), function(df) {
+  with(unique(df), find_mucus_thickness(
+    o2 = get_default("o2_cutoff", "µM"), 
+    start_x = mucus.um, # use mucus.um as first guess
+    geometry = geometry, direction = direction, 
+    cells = cell.pow, D_o2 = D_o2))
+})
+
+# summarize
+cutoff_info <- dcast(
+  mutate(cutoff_depths,
+         `Density [cells/ml]` = scientific(10^cell.pow, digits=2),
+         rounded = signif(depth, 2),
+         value = ifelse(rounded > 1000, paste0(rounded/1000, " mm"), paste0(rounded, " µm"))
+         ),  cell.pow + `Density [cells/ml]` ~ Scenario, value.var = "value")[-1]
+
+if (!file.exists("tables")) dir.create("tables")
+write.csv(cutoff_info, file = "tables/table_oxycline_model.csv", row.names = FALSE)
+kable(cutoff_info)
+```
+
+
+### Diffusion into mucus lining
+
+Here we visualize how the thickness of the mucus layer inside an airway can change the oxygen profiles.
+
+
+#### Run model
+
+```{r run-model3, results='asis'}
+data3 <- ddply(subset(params, test == "thickness"), names(params), function(df) {
+  with(unique(df), model_o2(x_min = free.um, x_max = free.um + mucus.um, 
+                            geometry = geometry, direction = direction, 
+                            cells = cell.pow, D_o2 = D_o2))
+})
+
+kable(summarize_model_results(data3, params))
+```
+
+
+##### Plot profile
+
+Plot a single transect profile from the center of a bronchiole to the mucus-epiphelial cell boundary.
+
+```{r oxygen_profiles_bronchiole_transect, fig.width=8, fig.height=5.5, save_pdf=TRUE}
+# facet grid labeler
+grid_labeller <- function(variable,value){
+  if (variable == "mucus.um")
+    return (sapply(value, function(i) bquote("mucus:"~.(i)~mu*"m")))
+  else if (variable == "cell.pow")
+    return (sapply(value, function(i) bquote("10"^.(i)~"cells/ml")))
+}
+
+# plot transect
+ggplot(data3) +
+  geom_rect(data = unique(mutate(subset(params, test == "thickness", sel=c("free.um", "mucus.um")), layer = "mucus-free airway")), 
+            aes(min = -Inf, ymax = Inf, xmin = 0, xmax = free.um, fill = layer), alpha = 0.1) +
+  geom_rect(data = unique(mutate(subset(params, test == "thickness", sel=c("free.um", "mucus.um")), layer = "mucus layer")), 
+            aes(min = -Inf, ymax = Inf, xmin = free.um, xmax = free.um + mucus.um, fill = layer), alpha = 0.1) +
+  geom_line(aes(x, o2, colour = factor(cell.pow)), size = 1) + 
+  geom_hline(yintercept = get_default("o2_max", "µM"), colour = "black", size = 1, linetype = 2) + 
+  scale_colour_manual ("Microbial load: ", values = brewer.pal(9, "Set1"), 
+                       labels = function(value) sapply(value, function(i) bquote("10"^.(i)~"cells/ml"))) + 
+  scale_fill_manual("Layer: ", values = c("#FEE08B", "#2171B5")) + 
+  scale_x_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), expand=c(0,0)) +
+  facet_grid(~mucus.um, labeller = grid_labeller) + 
+  labs(y = expression("O"[2]~"["*mu*M*"]")) +
+  theme_bw() + theme_xangle() + theme_facet() + theme_public() + 
+  theme(legend.position = "bottom") 
+```
+
+### Plot 2D visualization
+
+Visualize the entire bronchiole cross section.
+
+```{r oxygen_profiles_bronchiole_cross_section, fig.width = 10, fig.height = 7, save_pdf = TRUE}
+# convert to polar ccoordinates
+data_cart <- ddply(data3, .(mucus.um, cell.pow), 
+                   function(df) convert_polar_to_cartesian(df$x, df$o2, N=400))
+
+# make o2 plot
+spectral_colors <- colorRampPalette (brewer.pal (11, "Spectral")) 
+ggplot(data_cart, 
+       aes (x, y, fill = z, z = z)) + 
+  geom_raster (hjust = 0, vjust = 0) + theme_bw () + 
+  scale_fill_gradientn (expression("O"[2]~"["*mu*M*"]"), colours = spectral_colors (4), limits=c(0, get_default("o2_max", "µM"))) + 
+  scale_x_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
+  scale_y_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
+  facet_grid(mucus.um~cell.pow, labeller = grid_labeller) + 
+  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + theme_xangle(angle = 90) + 
+  guides(fill = guide_colourbar(barwidth = 3, barheight = 10, label.hjust = 0))
+```
+
+
+### Growth rates
+
+Calculate and visualize growth rates for oxygen limited organisms (assuming monod-type growth rates as a function of oxygen concentrations). Only applies to O2-respiring organisms in the mucus, not to fermenters or anaerobically growing microbes.
+
+```{r growth_rates_bronchiole_cross_section, fig.width = 10, fig.height = 7, save_pdf=TRUE}
+# calculate growth rates (in 1/hr)
+data_growth <- mutate(data_cart, mu.hr = calculate_monod_growth_rate (z))
+
+# define meaningful breaks in the growth rates and root-scale colour scale to spread the 
+# gradient across the breaks (rather than having all colour transitions at one extreme)
+dblts.breaks <- list(c(45, "minutes"), c(90, "minutes"), c(5, "hours"), c(1, "day"), c(14, "days"))
+dblts.hr.breaks = sapply(dblts.breaks, function(x) duration(as.integer(x[1]), x[2])) / (60 * 60)
+mu.hr.breaks <- c(0, log(2)/dblts.hr.breaks)
+break.labels <- c(two_line_label("no growth by", O[2]~"respiration"), duration_label(dblts.hr.breaks, "hours"))
+colour_scaling <- function(x) x^(1/4) 
+
+# make growth plot
+ggplot(data_growth, aes (x, y, fill = colour_scaling(mu.hr))) + 
+  geom_raster (hjust = 0, vjust = 0) + theme_bw () + 
+  scale_fill_gradientn (
+    two_line_label("Generation time", "(resp. growth)"), colours = spectral_colors (4), 
+    breaks = colour_scaling(mu.hr.breaks), limits=c(0, max(colour_scaling(mu.hr.breaks))), labels = break.labels) + 
+  scale_x_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
+  scale_y_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
+  facet_grid(mucus.um~cell.pow, labeller = grid_labeller) + 
+  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + theme_xangle(angle = 90) + 
+  guides(fill = guide_colourbar(barwidth = 3, barheight = 10, label.hjust = 0))
+```
+
