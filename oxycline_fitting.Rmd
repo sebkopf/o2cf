@@ -3,7 +3,7 @@ title: "Oxycline implications for microbial density"
 output: html_document
 ---
 
-All source code and data needed to generate this report is available [online](https://github.com/sebkopf/o2cf).
+All source code and data needed to generate this report is available [online](https://github.com/sebkopf/o2cf#supplementary-information).
 
 ```{r load-funcs, message=FALSE, warning=FALSE}
 source("functions.R")
