@@ -126,7 +126,7 @@ kable(summarize_model_results(data1, params))
 
 #### Plot geometry comparison
 
-```{r oxygen_profiles_different_geometries, fig.width=10, fig.height=7, save_pdf=TRUE}
+```{r oxygen_profiles_different_geometries, fig.width=6.5, fig.height=5, save_pdf=TRUE}
 p1 <- ggplot(data1) +
   geom_rect(data = data.frame(layer = c("air", "mucus"), min = c(-50, 0), max = c(0, Inf)), 
             aes(xmin = -Inf, xmax = Inf, ymin = min, ymax = max, fill = layer), alpha = 0.1) +
@@ -143,10 +143,16 @@ p1 <- ggplot(data1) +
           two_line_label(lines[1], lines[2])
         })
     }) + 
-  theme_bw() + theme_xangle() + theme_facet() + theme_public() + 
+  theme_bw() + theme_xangle() + theme_facet(margin.cm = 0.5) + 
+  theme_public(font_size = 10) + 
   theme(legend.position = "bottom") 
 p1
 ```
+
+```{r oxygen_profiles_different_geometries_no_legend, fig.width=6.5, fig.height=4, save_pdf=TRUE}
+p1 + theme(legend.position = "none")
+```
+
 
 ### Comparision between differen diffusion coefficients
 
@@ -166,7 +172,7 @@ kable(summarize_model_results(data2, params))
 
 #### Plot diffusion comparison
 
-```{r oxygen_profiles_variable_diffusivities, fig.width=10, fig.height=7, save_pdf=TRUE}
+```{r oxygen_profiles_variable_diffusivities, fig.width=6.5, fig.height=5, save_pdf=TRUE}
 p1 %+% data2  %+%
   facet_grid(~D_o2, labeller = function(variable, value){
     sapply(value, function(i) 
@@ -256,7 +262,7 @@ ggplot(data3) +
 
 Visualize the entire bronchiole cross section.
 
-```{r oxygen_profiles_bronchiole_cross_section, fig.width = 10, fig.height = 7, save_pdf = TRUE}
+```{r oxygen_profiles_bronchiole_cross_section, fig.width = 6.5, fig.height = 4.5, save_pdf = TRUE}
 # convert to polar ccoordinates
 data_cart <- ddply(data3, .(mucus.um, cell.pow), 
                    function(df) convert_polar_to_cartesian(df$x, df$o2, N=400))
@@ -266,12 +272,17 @@ spectral_colors <- colorRampPalette (brewer.pal (11, "Spectral"))
 ggplot(data_cart, 
        aes (x, y, fill = z, z = z)) + 
   geom_raster (hjust = 0, vjust = 0) + theme_bw () + 
-  scale_fill_gradientn (expression("O"[2]~"["*mu*M*"]"), colours = spectral_colors (4), limits=c(0, get_default("o2_max", "µM"))) + 
+  scale_fill_gradientn (
+    expression("O"[2]~"["*mu*M*"]"), colours = spectral_colors (4), 
+    limits=c(0, get_default("o2_max", "µM")), labels = function(x) {
+      paste0(x, "                ") # to align legend with growth rates plot
+    }) + 
   scale_x_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
   scale_y_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
   facet_grid(mucus.um~cell.pow, labeller = grid_labeller) + 
-  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + theme_xangle(angle = 90) + 
-  guides(fill = guide_colourbar(barwidth = 3, barheight = 10, label.hjust = 0))
+  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + 
+  theme_xangle(angle = 90, hjust= 1, vjust = 0.5) + theme_public(font_size = 10) +
+  guides(fill = guide_colourbar(barwidth = 1.5, barheight = 10, label.hjust = 0))
 ```
 
 
@@ -279,7 +290,7 @@ ggplot(data_cart,
 
 Calculate and visualize growth rates for oxygen limited organisms (assuming monod-type growth rates as a function of oxygen concentrations). Only applies to O2-respiring organisms in the mucus, not to fermenters or anaerobically growing microbes.
 
-```{r growth_rates_bronchiole_cross_section, fig.width = 10, fig.height = 7, save_pdf=TRUE}
+```{r growth_rates_bronchiole_cross_section, fig.width = 6.5, fig.height = 4.5, save_pdf=TRUE}
 # calculate growth rates (in 1/hr)
 data_growth <- mutate(data_cart, mu.hr = calculate_monod_growth_rate (z))
 
@@ -300,7 +311,7 @@ ggplot(data_growth, aes (x, y, fill = colour_scaling(mu.hr))) +
   scale_x_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
   scale_y_continuous(expression("Distance from center of bronchiole ["*mu*m*"]"), labels = function(x) abs(x)) +
   facet_grid(mucus.um~cell.pow, labeller = grid_labeller) + 
-  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + theme_xangle(angle = 90) + 
-  guides(fill = guide_colourbar(barwidth = 3, barheight = 10, label.hjust = 0))
+  theme_bw() + theme_nogrid() + theme_facet(0) + theme_public() + theme_xangle(angle = 90, hjust= 1, vjust = 0.5) + theme_public(font_size = 10) +
+  guides(fill = guide_colourbar(barwidth = 1.5, barheight = 10, label.hjust = 0))
 ```
 
