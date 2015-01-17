@@ -71,22 +71,22 @@ profiles <- find_oxyclines(profiles, kernel_width = 10, no_o2_cutoff = get_defau
 
 Show oxygen profiles with the oxyclines highlighted in red and framed by dashed lines.
 
-```{r data_profiles, results='asis', fig.width = 16, fig.height = 16, save_pdf = TRUE }
+```{r data_profiles, results='asis', fig.width = 15, fig.height = 15, save_pdf = TRUE }
 plot.df <- mutate(profiles, panel = paste0(format(date, format = "%m/%d/%y"), ", ", patient))
 p1 <- ggplot(NULL) + 
   geom_hline(data = unique(plot.df[c("panel", "oxycline_start")]), aes(yintercept = oxycline_start), linetype = 2) +
   geom_hline(data = unique(plot.df[c("panel", "oxycline_end")]), aes(yintercept = oxycline_end), linetype = 2) +
-  geom_point(data = subset(plot.df, !is_oxycline), 
-             aes(x = conc, y = depth), shape = 21, colour = "black", fill = "white") +
-  geom_point(data = subset(plot.df, is_oxycline), 
-             aes(x = conc, y = depth, fill = orp), shape = 21, colour = "black") +
   scale_y_reverse(labels = function(x) x/1000) + 
   scale_fill_manual("Redox conditions", values = c("#999999", "#E41A1C", "#377EB8")) +
   theme_bw() + theme_xangle() + theme_facet(margin.cm=0.1) + theme_public() + theme_nogrid() + 
   theme(legend.position = "bottom", legend.direction = "vertical") + 
   labs(y = "Probe depth [mm]", x = expression("O"[2]~"["*mu*M*"]")) +
   facet_wrap(~panel, scales = "free") 
-p1
+p1 + 
+  geom_point(data = subset(plot.df, !is_oxycline), 
+             aes(x = conc, y = depth), shape = 21, colour = "black", fill = "white") +
+  geom_point(data = subset(plot.df, is_oxycline), 
+             aes(x = conc, y = depth, fill = orp), shape = 21, colour = "black")
 ```
 
 
@@ -134,10 +134,14 @@ message("Cell density from fit [cells/ml]",
 
 ### Visualize results
 
-Plotting model fits in green on top of data
+Plotting model fits in green on top of data (data plotted up to profile midpoint for clarity).
 
-```{r data_model_fits, fig.width = 16, fig.height = 16, save_pdf = TRUE}
+```{r data_model_fits, fig.width = 15, fig.height = 15, save_pdf = TRUE}
 p1 + 
+  geom_point(data = subset(plot.df, above_midpoint & !is_oxycline), 
+             aes(x = conc, y = depth), shape = 21, colour = "black", fill = "white") +
+  geom_point(data = subset(plot.df, above_midpoint & is_oxycline), 
+             aes(x = conc, y = depth, fill = orp), shape = 21, colour = "black") +
   geom_line(
     data = mutate(models, panel = paste0(format(date, format = "%m/%d/%y"), ", ", patient)),
     aes(x = o2, y = model_depth), colour = "#4DAF4A", size = 1, linetype = 1) 

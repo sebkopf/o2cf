@@ -36,7 +36,8 @@ find_midpoints <- function(df, low_o2_threshold = 1, group_by = c("profile", "da
         low_o2 = conc < low_o2_threshold,
         min_low_o2_depth = min(depth[low_o2]),
         max_low_o2_depth = max(depth[low_o2]),
-        midpoint_depth = (min_low_o2_depth + max_low_o2_depth)/2
+        midpoint_depth = (min_low_o2_depth + max_low_o2_depth)/2,
+        above_midpoint = depth <= midpoint_depth
   )
 }
 
@@ -102,7 +103,8 @@ find_oxyclines <- function(df, kernel_width = 5, no_o2_cutoff = get_default("o2_
 
 #' find cell density by fitting data from oxycline to the model
 #' @param df oxycline data with depth (in µm) and conc (in µM) columns
-find_cell_density_from_oxycline <- function(df, ...) {
+#' @param n number of data points for model grid
+find_cell_density_from_oxycline <- function(df, n=400, ...) {
   # offset to make the first point 0 and round for aligning the model by appropriate depth steps
   df <- mutate(df, offset_depth = round(depth - min(depth), 2)) 
   
@@ -114,7 +116,7 @@ find_cell_density_from_oxycline <- function(df, ...) {
     stop ("for profile ", unique(df$profile), " it seems that the step sizes are not all multiples ",
           "of each other, can't make a matchin model grid")
   n_data <- thickness/dx + 1
-  n_grid <- floor(400/(n_data - 1)) * (n_data - 1)
+  n_grid <- floor(n/(n_data - 1)) * (n_data - 1)
   
   # find fit to data
   timing <- system.time(
