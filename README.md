@@ -1,6 +1,6 @@
 ## Supplementary Information
 
-This repository holds all supplementary source code needed to reproduce the modelling and data fitting component of Cowley et. al (submitted to mBio, 2015).
+This repository holds all supplementary source code needed to reproduce the modelling and data fitting component of the following publication: Cowley ES, Kopf SH, LaRiviere A, Ziebis W, Newman DK. 2015. *Pediatric cystic fibrosis sputum can be chemically dynamic, anoxic, and extremely reduced due to hydrogen sulfide formation*. mBio 6(4):e00767-15. doi:10.1128/mBio.00767-15.
 
 For the easiest way to run the two [R Markdown](http://rmarkdown.rstudio.com/) (.Rmd) files that produce the figures and HTML reports, please follow the instructions below.
 
